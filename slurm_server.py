@@ -37,6 +37,11 @@ def add_experiment():
     # TODO
     command = request.json.get('command', '')
     cur = get_db()
+    # Get next id
+    cur.execute('SELECT MAX(id) FROM experiments')
+    next_id = cur.fetchone()[0] + 1 if cur.fetchone()[0] else 1
+    command = command.strip().replace('$SLURM_JOB_ID', str(next_id))
+    # Add the experiment to the database
     cur.execute('INSERT INTO experiments (command, status) VALUES (?, ?)', (command, 'waiting'))
     g.db.commit()
     return jsonify({'status': 'ok'})
