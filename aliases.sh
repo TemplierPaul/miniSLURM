@@ -2,7 +2,7 @@
 
 # Make srun but the command is the first argument
 function srun() {
-    curl -X POST -H "Content-Type: application/json" -d '{"command":"'"$1"'"}' http://localhost:5000/srun
+    curl --noproxy localhost -X POST -H "Content-Type: application/json" -d '{"command":"'"$1"'"}' http://localhost:5000/srun
 }
 
 # Scancel

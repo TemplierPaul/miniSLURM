@@ -33,6 +33,8 @@ def init_db():
 # Add a new experiment to the list
 @app.route('/srun', methods=['POST'])
 def add_experiment():
+    # Only allow requests from localost
+    # TODO
     command = request.json.get('command', '')
     cur = get_db()
     cur.execute('INSERT INTO experiments (command, status) VALUES (?, ?)', (command, 'waiting'))
