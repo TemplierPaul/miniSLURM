@@ -77,6 +77,58 @@ function squeue() {
 
 }
 
+function sdone() {
+    # Make the request and save the JSON response
+    response=$(curl -s http://localhost:5000/sdone)
+
+    # Parse the JSON response and extract the "Running" and "Waiting" arrays
+    finished=$(echo "$response" | jq '.Finished')
+    canceled=$(echo "$response" | jq '.Canceled')
+
+    # Print the header of the table
+    printf "+----------+-------+--------------------------------+\n"
+    printf "| Status   | ID    | Command                         \n"
+    printf "+----------+-------+--------------------------------+\n"
+
+    # Print the rows of the table for the "Running" experiments
+    # Iterate on the list of experiments
+
+    for row in $(echo "${finished}" | jq -r '.[] | @base64'); do
+        _jq() {
+            echo ${row} | base64 --decode | jq -r ${1}
+        }
+
+        # Extract the fields from the JSON response
+        id=$(_jq '.id')
+        command=$(_jq '.command')
+
+        # Print the row
+        print_row "Finished" "$id" "$command"
+    done
+
+    printf "+----------+-------+--------------------------------+\n"
+
+    # Print the rows of the table for the "Waiting" experiments
+    # Iterate on the list of experiments
+
+    for row in $(echo "${canceled}" | jq -r '.[] | @base64'); do
+        _jq() {
+            echo ${row} | base64 --decode | jq -r ${1}
+        }
+
+        # Extract the fields from the JSON response
+        id=$(_jq '.id')
+        command=$(_jq '.command')
+
+        # Print the row
+        print_row "Canceled" "$id" "$command"
+    done
+
+    # Print the footer of the table
+    printf "+----------+-------+--------------------------------+\n"
+
+}
+
 
 alias sstart='curl http://localhost:5000/start'
 
@@ -87,6 +139,7 @@ function sfinished() {
 
 # Export squeue
 alias squeue='squeue'
+alias sdone='sdone'
 alias srun='srun'
 alias scancel='scancel'
 alias sfinished='sfinished'

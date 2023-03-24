@@ -34,7 +34,8 @@ def init_db():
 @app.route('/srun', methods=['POST'])
 def add_experiment():
     # Only allow requests from localost
-    # TODO
+    if request.remote_addr != '':
+        return jsonify({'status': 'error', 'message': 'Only localhost is allowed to add experiments'})
     command = request.json.get('command', '')
     cur = get_db()
     # Get next id
@@ -57,6 +58,19 @@ def get_queue():  # sourcery skip: merge-dict-assign, move-assign-in-block
     # Get all experiments with status "waiting"
     cur.execute('SELECT id, command, status FROM experiments WHERE status="waiting"')
     experiments["Waiting"] = [{'id': row[0], 'command': row[1], 'status':row[2]} for row in cur.fetchall()]
+    return jsonify(experiments)
+
+# Get the list of finished and cancelled experiments
+@app.route('/sdone', methods=['GET'])
+def get_done():  # sourcery skip: merge-dict-assign, move-assign-in-block
+    cur = get_db()
+    experiments = {}
+    # Get all experiments with status "running"
+    cur.execute('SELECT id, command, status FROM experiments WHERE status="finished"')
+    experiments["Finished"] = [{'id': row[0], 'command': row[1], 'status':row[2]} for row in cur.fetchall()]
+    # Get all experiments with status "waiting"
+    cur.execute('SELECT id, command, status FROM experiments WHERE status="canceled"')
+    experiments["Canceled"] = [{'id': row[0], 'command': row[1], 'status':row[2]} for row in cur.fetchall()]
     return jsonify(experiments)
 
 # Cancel an experiment by id
