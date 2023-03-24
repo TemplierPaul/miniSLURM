@@ -34,13 +34,21 @@ def init_db():
 @app.route('/srun', methods=['POST'])
 def add_experiment():
     # Only allow requests from localost
-    if request.remote_addr != '':
-        return jsonify({'status': 'error', 'message': 'Only localhost is allowed to add experiments'})
+    # if request.remote_addr != '':
+    #     return jsonify({'status': 'error', 'message': 'Only localhost is allowed to add experiments'})
     command = request.json.get('command', '')
     cur = get_db()
     # Get next id
     cur.execute('SELECT MAX(id) FROM experiments')
-    next_id = cur.fetchone()[0] + 1 if cur.fetchone()[0] else 1
+    # Get one 
+    row = cur.fetchone()
+    # If there's a row, get the first element of the row
+    if row[0]:
+        print(row)
+        next_id = row[0] + 1
+    # Otherwise, set the next id to 1
+    else:
+        next_id = 1
     command = command.strip().replace('$SLURM_JOB_ID', str(next_id))
     # Add the experiment to the database
     cur.execute('INSERT INTO experiments (command, status) VALUES (?, ?)', (command, 'waiting'))
@@ -95,10 +103,13 @@ def cancel_experiment(id):
     return jsonify({'status': 'ok'})
 
 # Mark an experiment as finished and start the next one
-@app.route('/finished/<int:id>', methods=['PUT'])
-def finish_experiment(id):
+@app.route('/finished', methods=['POST'])
+def finish_experiment():
+    id = request.json.get('id', '')
+    status = request.json.get('status', '')
     cur = get_db()
-    cur.execute('UPDATE experiments SET status="finished" WHERE id=?', (id,))
+    # Update the status of the experiment
+    cur.execute(f'UPDATE experiments SET status="{status}" WHERE id=?', (id,))
     g.db.commit()
     # If there's a next experiment, start it
     start_experiment()
@@ -112,18 +123,32 @@ def start_experiment():
     next_experiment = cur.fetchone()
     if next_experiment:
         next_id, next_command = next_experiment
-        print("Running experiment %d: %s" % (next_id, next_command))
 
         # Make the experiment call finished when it's done or failed
-        next_command += ' && curl -X PUT http://localhost:5000/finished/%d' % next_id
-        next_command += ' || curl -X PUT http://localhost:5000/finished/%d' % next_id
+        next_command = f"({next_command}); exit_status=$?; source ~/.bashrc; finish {next_id} $exit_status" 
 
         # Start the command in a fresh tmux session
         import subprocess
-        subprocess.call(['tmux', 'new-session', '-d', '-s', 'experiment-%d' % next_id, next_command])
+        # subprocess.call(['tmux', 'new-session', '-d', '-s', 'experiment-%d' % next_id, next_command])
+        
+        cmd = f"tmux new-session -d -s experiment-{next_id} \"{next_command}\""
+        subprocess.run(cmd, shell=True)
+        print(f"Started experiment {next_id}: {cmd}")
         cur.execute('UPDATE experiments SET status="running" WHERE id=?', (next_id,))
         g.db.commit()
     return jsonify({'status': 'ok'})
+
+# Clear the database
+@app.route('/clear', methods=['DELETE'])
+def clear():
+    cur = get_db()
+    cur.execute('DELETE FROM experiments')
+    g.db.commit()
+    init_db()
+    return jsonify({'status': 'ok'})
+
+# clear command:
+# curl -X DELETE http://localhost:5000/clear
 
 if __name__ == '__main__':
     init_db()

@@ -7,7 +7,7 @@ function srun() {
 
 # Scancel
 function scancel() {
-    response=$(curl -X DELETE http://localhost:5000/scancel/$1)
+    response=$(curl --noproxy localhost  -X DELETE http://localhost:5000/scancel/$1)
     # Check the response is json {"status": "ok"}, else print the error message
     if [[ $response == *"status"* ]]; then
         echo "Experiment $1 cancelled"
@@ -27,7 +27,8 @@ print_row () {
 
 function squeue() {
     # Make the request and save the JSON response
-    response=$(curl -s http://localhost:5000/squeue)
+    response=$(curl --noproxy localhost  -s http://localhost:5000/squeue)
+    # echo $response
 
     # Parse the JSON response and extract the "Running" and "Waiting" arrays
     running=$(echo "$response" | jq '.Running')
@@ -79,7 +80,7 @@ function squeue() {
 
 function sdone() {
     # Make the request and save the JSON response
-    response=$(curl -s http://localhost:5000/sdone)
+    response=$(curl --noproxy localhost  -s http://localhost:5000/sdone)
 
     # Parse the JSON response and extract the "Running" and "Waiting" arrays
     finished=$(echo "$response" | jq '.Finished')
@@ -130,16 +131,32 @@ function sdone() {
 }
 
 
-alias sstart='curl http://localhost:5000/start'
+alias sstart='curl --noproxy localhost  http://localhost:5000/start'
 
 # Scance
 function sfinished() {
-    curl -X PUT http://localhost:5000/finished/$1
+      curl --noproxy localhost -X POST -H "Content-Type: application/json" -d "{\"id\": \"$1\", \"status\": \"finished\"}" http://localhost:5000/finished
 }
 
+function finish {
+    echo "Experiment $1 finished"
+    if [ $? -eq 0 ]; then
+        status="finished"
+    else
+        status="failure"
+    fi
+    echo "Experiment $1 finished with status $status"
+    curl --noproxy localhost -X POST -H "Content-Type: application/json" -d "{\"id\": \"$1\", \"status\": \"$status\"}" http://localhost:5000/finished
+}
+
+export -f finish
+
 # Export squeue
-alias squeue='squeue'
-alias sdone='sdone'
-alias srun='srun'
-alias scancel='scancel'
-alias sfinished='sfinished'
+export -f squeue
+export -f print_row
+alias q='watch -x bash -c squeue'
+export -f sdone
+export -f srun
+export -f scancel
+export -f sfinished
+
