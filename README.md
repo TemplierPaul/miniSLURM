@@ -47,5 +47,6 @@ alias curl='curl --noproxy localhost'
 ``` -->
 
 ## TODO
+- [ ] Add a `sstatus` command to get the status of the server
 - [x] Check if a job is running when doing `sstart`
 - [x] Add a `spause` command to stop the server from running new jobs after the current job finishes

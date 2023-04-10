@@ -208,7 +208,7 @@ function sdone() {
 }
 
 function sstart(){
-    response =$(curl -s --noproxy localhost  http://localhost:5000/start)
+    response=$(curl -s --noproxy localhost  http://localhost:5000/start)
      # Check the response is json {"status": "ok"}, else print the error message
     if [[ $response == *"status"* ]]; then
         echo "Experiment $id $job_status"
@@ -247,3 +247,4 @@ export -f scancel
 export -f sfinished
 export -f spause
 export -f sresume
+export -f sstart

@@ -155,6 +155,7 @@ def get_done():  # sourcery skip: merge-dict-assign, move-assign-in-block
 # Cancel an experiment by id
 @app.route('/scancel/<id>', methods=['DELETE'])
 def cancel_experiment(id):
+    global RUNNING
     if id == "all":
         # Cancel all experiments
         # Cancel waiting experiments
@@ -174,7 +175,8 @@ def cancel_experiment(id):
     if status and status[0] == 'running':
         # Kill the tmux session
         import subprocess
-        subprocess.call(['tmux', 'kill-session', '-t', 'experiment-%d' % id])
+        subprocess.call(['tmux', 'kill-session', '-t', f'experiment-{id}'])
+        RUNNING = False
     elif status and status[0] == 'finished':
         return jsonify({'status': 'error', 'message': 'Experiment already finished'})
     elif status and status[0] == 'canceled':
