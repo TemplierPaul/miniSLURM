@@ -191,6 +191,7 @@ def cancel_experiment(id):
 @app.route('/finished', methods=['POST'])
 def finish_experiment():
     id = request.json.get('id', '')
+    cancel_experiment(id)
     status = request.json.get('status', '')
     cur = get_db()
     # Update the status of the experiment
@@ -213,6 +214,8 @@ def start_experiment():
     cur = get_db()
     cur.execute('SELECT id, command FROM experiments WHERE status="waiting" ORDER BY id ASC LIMIT 1')
     next_experiment = cur.fetchone()
+    next_id = "No XP"
+    next_command = "No XP"
     if next_experiment:
         next_id, next_command = next_experiment
 
@@ -223,8 +226,18 @@ def start_experiment():
         import subprocess
         # subprocess.call(['tmux', 'new-session', '-d', '-s', 'experiment-%d' % next_id, next_command])
         
-        cmd = f"tmux new-session -d -s experiment-{next_id} \"{next_command}\""
-        subprocess.run(cmd, shell=True)
+        # cmd = f"tmux new-session -d -s experiment-{next_id} \"{next_command}\""
+        # subprocess.run(cmd, shell=True)
+
+        cmds = [
+            f"tmux new-session -d -s experiment-{next_id}", # Create a new tmux session
+            f"tmux send-keys -t experiment-{next_id} \"source ~/.bashrc\" Enter", # Source bashrc
+            f"tmux send-keys -t experiment-{next_id} \"{next_command}\" Enter", # Send the command to the session
+            f"tmux detach -s experiment-{next_id}" # Detach the session    
+        ]
+        for cmd in cmds:
+            subprocess.run(cmd, shell=True)
+
         print(f"Started experiment {next_id}: {cmd}")
         cur.execute('UPDATE experiments SET status="running" WHERE id=?', (next_id,))
         g.db.commit()
