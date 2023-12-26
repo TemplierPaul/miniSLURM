@@ -1,31 +1,34 @@
 from flask import Flask, jsonify, request, g
 import sqlite3
+import subprocess
 
 DATABASE = 'experiments.db'
 
 app = Flask(__name__)
 
-RUNNING = False
+RUNNING = 0
 PAUSED = False
+
+MAX_JOBS = 10
 
 # check with tmux if something is running
 def check_running():
-    import subprocess
-    global RUNNING
+    global RUNNING, MAX_JOBS
     # get the list of tmux sessions
     # command: tmux list-sessions -F '#{session_name}'
     try:
         sessions = subprocess.check_output(['tmux', 'ls']).decode('utf-8')
     except subprocess.CalledProcessError as e:
         sessions = e.output.decode('utf-8')
-        RUNNING = False
+        RUNNING = 0
         return
     sessions = sessions.splitlines()
     # if there is a session with the name starting with experiment-, then something is running
-    if any([session.startswith('experiment-') for session in sessions]):
-        RUNNING = True
-    else:
-        RUNNING = False
+    # Count them
+    sessions = [session for session in sessions if session.startswith('experiment-')]
+    RUNNING = len(sessions)
+    # print(f"Checked: {RUNNING} running")
+    # print(sessions)
 
 check_running()
     
@@ -82,7 +85,9 @@ def add_experiment():
     # Check running
 
     job_status = "queued"
-    if not RUNNING and not PAUSED:
+    global MAX_JOBS
+    print(f"Job ID: {next_id}, Running {RUNNING}/{MAX_JOBS}")
+    if RUNNING < MAX_JOBS and not PAUSED:
         start_experiment()
         job_status = "started"
     return jsonify({'status': 'ok', "id": next_id, "job_status": job_status})
@@ -90,13 +95,18 @@ def add_experiment():
 # Get the list of waiting experiments
 @app.route('/squeue', methods=['GET'])
 def get_queue():  # sourcery skip: merge-dict-assign, move-assign-in-block
+    global MAX_JOBS, RUNNING
     cur = get_db()
     if PAUSED:
         status = "Paused"
-    elif RUNNING:
-        status = "Running"
     else:
-        status = "Waiting"
+        check_running()
+        status = f"Running {RUNNING}/{MAX_JOBS}"
+    # elif RUNNING > 0:
+    #     check_running()
+    #     status = f"Running {RUNNING}/{MAX_JOBS}"
+    # else:
+    #     status = "Waiting"
     experiments = {
         "waiting_nb": -1,
         "running_nb": -1,
@@ -166,6 +176,18 @@ def cancel_experiment(id):
         ids = [row[0] for row in get_db().execute('SELECT id FROM experiments WHERE status="running"')]
         for id in ids:
             cancel_experiment(id)
+        # Kill all tmux sessions
+        sessions = subprocess.check_output(['tmux', 'ls']).decode('utf-8')
+        if len(sessions) > 0:
+            print(f"Killing {len(sessions)} sessions")
+            print(sessions)
+        sessions = sessions.splitlines()
+        sessions = [session for session in sessions if session.startswith('experiment-')]
+        for session in sessions:
+            session = session.split(':')[0]
+            subprocess.call(['tmux', 'kill-session', '-t', session])
+            print(f"Killed session {session}")
+        check_running()
         return jsonify({'status': 'ok'})
 
     cur = get_db()
@@ -174,14 +196,15 @@ def cancel_experiment(id):
     status = cur.fetchone()
     if status and status[0] == 'running':
         # Kill the tmux session
-        import subprocess
+        # import subprocess
         subprocess.call(['tmux', 'kill-session', '-t', f'experiment-{id}'])
-        RUNNING = False
+        # RUNNING = False
     elif status and status[0] == 'finished':
         return jsonify({'status': 'error', 'message': 'Experiment already finished'})
     elif status and status[0] == 'canceled':
         return jsonify({'status': 'error', 'message': 'Experiment already canceled'})
-    
+
+    check_running()
     # Update the status of the experiment
     cur.execute('UPDATE experiments SET status="canceled" WHERE id=?', (id,))
     g.db.commit()
@@ -198,7 +221,8 @@ def finish_experiment():
     cur.execute(f'UPDATE experiments SET status=? WHERE id=?', (status, id,))
     g.db.commit()
     global RUNNING
-    RUNNING = False
+    # RUNNING = False
+    check_running()
     # If there's a next experiment, start it
     global PAUSED
     if not PAUSED:
@@ -208,8 +232,9 @@ def finish_experiment():
 # Start the next experiment
 @app.route('/start', methods=['GET'])
 def start_experiment():
-    global RUNNING, PAUSED
-    if RUNNING:
+    global RUNNING, PAUSED, MAX_JOBS
+    check_running()
+    if RUNNING > MAX_JOBS:
         return jsonify({'status': 'error', 'message': 'Already running'})
     cur = get_db()
     cur.execute('SELECT id, command FROM experiments WHERE status="waiting" ORDER BY id ASC LIMIT 1')
@@ -223,7 +248,7 @@ def start_experiment():
         next_command = f"({next_command}); exit_status=$?; source ~/.bashrc; finish {next_id} $exit_status" 
 
         # Start the command in a fresh tmux session
-        import subprocess
+        # import subprocess
         # subprocess.call(['tmux', 'new-session', '-d', '-s', 'experiment-%d' % next_id, next_command])
         
         # cmd = f"tmux new-session -d -s experiment-{next_id} \"{next_command}\""
@@ -238,10 +263,10 @@ def start_experiment():
         for cmd in cmds:
             subprocess.run(cmd, shell=True)
 
-        print(f"Started experiment {next_id}: {cmd}")
+        print(f"Started experiment {next_id}: {next_command}")
         cur.execute('UPDATE experiments SET status="running" WHERE id=?', (next_id,))
         g.db.commit()
-        RUNNING = True
+        check_running()
         PAUSED = False
     return jsonify({'status': 'ok', "id": next_id, "command": next_command})
 
